@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MCQ Practice</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 1rem; line-height: 1.5; }
+  nav button { margin-right: .5rem; padding: .4rem 1rem; cursor: pointer; }
+  nav button.active { font-weight: bold; }
+  .q { border-bottom: 1px solid #ddd; padding: 1rem 0; }
+  .q ul { list-style: none; padding-left: 0; }
+  summary { cursor: pointer; color: #06c; }
+  details > div { background: #f6f6f6; padding: .1rem .75rem; margin-top: .5rem; }
+  pre { background: #f0f0f0; padding: .5rem; overflow-x: auto; }
+  code { background: #f0f0f0; }
+  table { border-collapse: collapse; }
+  td, th { border: 1px solid #ccc; padding: .2rem .5rem; }
+</style>
+</head>
+<body>
+<nav id="nav"></nav>
+<main id="main"></main>
+<script>
+  // Put files in data/. Section = filename before the first "_" (OS_MCQ_Batch02.md -> OS).
+  const nav = document.getElementById('nav');
+  const main = document.getElementById('main');
+  const sections = {};
+
+  // Returns the question blocks of one file: each starts with a "Q21." line (optionally a "## " heading).
+  function questions(text) {
+    return text.split(/^(?=#+ |Q\d+\.)/m)
+      .filter(c => /^(#+\s*)?Q\d+\./.test(c))
+      .map(c => c.slice(c.indexOf('\n') + 1).replace(/\s*(---\s*)+$/, '').trim());
+  }
+
+  async function show(name) {
+    nav.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.textContent === name));
+    main.textContent = 'Loading...';
+    const texts = await Promise.all(sections[name].map(f => fetch('data/' + f).then(r => r.text())));
+    main.innerHTML = '';
+    for (const block of texts.flatMap(questions)) {
+      const i = block.search(/^\**Answer/m);
+      const q = document.createElement('div');
+      q.className = 'q';
+      q.innerHTML = marked.parse(i < 0 ? block : block.slice(0, i));
+      if (i >= 0) q.innerHTML += '<details><summary>Show answer</summary><div>' + marked.parse(block.slice(i)) + '</div></details>';
+      main.append(q);
+    }
+  }
+
+  // Lists data/: on GitHub Pages (<user>.github.io/<repo>/) via the GitHub API, locally via python http.server's listing.
+  async function listFiles() {
+    if (location.hostname.endsWith('.github.io')) {
+      const user = location.hostname.split('.')[0], repo = location.pathname.split('/')[1];
+      const items = await (await fetch(`https://api.github.com/repos/${user}/${repo}/contents/data`)).json();
+      return items.map(i => i.name);
+    }
+    const html = await (await fetch('data/')).text();
+    return [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll('a')]
+      .map(a => decodeURIComponent(a.getAttribute('href')));
+  }
+
+  listFiles().then(names => {
+    const files = names
+      .filter(f => /\.(md|txt)$/.test(f))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    for (const f of files) (sections[f.split(/[_.]/)[0].toUpperCase()] ??= []).push(f);
+    for (const name of Object.keys(sections)) {
+      const b = document.createElement('button');
+      b.textContent = name;
+      b.onclick = () => show(name);
+      nav.append(b);
+    }
+    const first = Object.keys(sections)[0];
+    if (first) show(first); else main.textContent = 'No files in data/.';
+  });
+</script>
+</body>
+</html>
