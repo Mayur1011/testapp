@@ -23,7 +23,7 @@
 <nav id="nav"></nav>
 <main id="main"></main>
 <script>
-  // Put files in data/. Section = filename before the first "_" (OS_MCQ_Batch02.md -> OS).
+  // Put MCQ files in data/ (OS_MCQ_Batch02.md -> OS section) and any notes in data/notes/.
   const nav = document.getElementById('nav');
   const main = document.getElementById('main');
   const sections = {};
@@ -35,8 +35,12 @@
       .map(c => c.slice(c.indexOf('\n') + 1).replace(/\s*(---\s*)+$/, '').trim());
   }
 
-  async function show(name) {
+  function activate(name) {
     nav.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.textContent === name));
+  }
+
+  async function show(name) {
+    activate(name);
     main.textContent = 'Loading...';
     const texts = await Promise.all(sections[name].map(f => fetch('data/' + f).then(r => r.text())));
     main.innerHTML = '';
@@ -50,29 +54,56 @@
     }
   }
 
-  // Lists data/: on GitHub Pages (<user>.github.io/<repo>/) via the GitHub API, locally via python http.server's listing.
-  async function listFiles() {
-    if (location.hostname.endsWith('.github.io')) {
-      const user = location.hostname.split('.')[0], repo = location.pathname.split('/')[1];
-      const items = await (await fetch(`https://api.github.com/repos/${user}/${repo}/contents/data`)).json();
-      return items.map(i => i.name);
+  // Notes: one collapsible per file in data/notes/; contents are fetched on first open.
+  function showNotes(files) {
+    activate('NOTES');
+    main.innerHTML = '';
+    for (const f of files) {
+      const d = document.createElement('details');
+      d.className = 'q';
+      d.innerHTML = '<summary></summary><div></div>';
+      d.querySelector('summary').textContent = f;
+      d.ontoggle = async () => {
+        const div = d.querySelector('div');
+        if (!d.open || div.childNodes.length) return;
+        const text = await (await fetch('data/notes/' + encodeURIComponent(f))).text();
+        if (f.endsWith('.md')) div.innerHTML = marked.parse(text);
+        else div.append(Object.assign(document.createElement('pre'), { textContent: text }));
+      };
+      main.append(d);
     }
-    const html = await (await fetch('data/')).text();
-    return [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll('a')]
-      .map(a => decodeURIComponent(a.getAttribute('href')));
   }
 
-  listFiles().then(names => {
-    const files = names
-      .filter(f => /\.(md|txt)$/.test(f))
-      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-    for (const f of files) (sections[f.split(/[_.]/)[0].toUpperCase()] ??= []).push(f);
-    for (const name of Object.keys(sections)) {
-      const b = document.createElement('button');
-      b.textContent = name;
-      b.onclick = () => show(name);
-      nav.append(b);
+  function addTab(name, onclick) {
+    const b = document.createElement('button');
+    b.textContent = name;
+    b.onclick = onclick;
+    nav.append(b);
+  }
+
+  // Lists files in a dir: on GitHub Pages (<user>.github.io/<repo>/) via the GitHub API, locally via python http.server's listing.
+  async function listFiles(dir) {
+    if (location.hostname.endsWith('.github.io')) {
+      const user = location.hostname.split('.')[0], repo = location.pathname.split('/')[1];
+      const r = await fetch(`https://api.github.com/repos/${user}/${repo}/contents/${dir}`);
+      return r.ok ? (await r.json()).filter(i => i.type === 'file').map(i => i.name) : [];
     }
+    const r = await fetch(dir + '/');
+    if (!r.ok) return [];
+    return [...new DOMParser().parseFromString(await r.text(), 'text/html').querySelectorAll('a')]
+      .map(a => decodeURIComponent(a.getAttribute('href')))
+      .filter(f => !f.endsWith('/'));
+  }
+
+  const byName = (a, b) => a.localeCompare(b, undefined, { numeric: true });
+
+  Promise.all([listFiles('data'), listFiles('data/notes')]).then(([names, notes]) => {
+    const files = names.filter(f => /\.(md|txt)$/.test(f)).sort(byName);
+    // Section = text before "_MCQ" (C_CPP_MCQ_... -> C_CPP), else before the first "_".
+    for (const f of files) (sections[(f.match(/^(.+?)_MCQ/i)?.[1] ?? f.split(/[_.]/)[0]).toUpperCase()] ??= []).push(f);
+    for (const name of Object.keys(sections)) addTab(name, () => show(name));
+    notes.sort(byName);
+    if (notes.length) addTab('NOTES', () => showNotes(notes));
     const first = Object.keys(sections)[0];
     if (first) show(first); else main.textContent = 'No files in data/.';
   });
