@@ -10,6 +10,9 @@
   nav button { margin-right: .5rem; padding: .4rem 1rem; cursor: pointer; }
   nav button.active { font-weight: bold; }
   .q { border-bottom: 1px solid #ddd; padding: 1rem 0; }
+  main { counter-reset: q; }
+  div.q { counter-increment: q; }
+  div.q::before { content: "Q" counter(q) "."; font-weight: bold; }
   .q ul { list-style: none; padding-left: 0; }
   summary { cursor: pointer; color: #06c; }
   details > div { background: #f6f6f6; padding: .1rem .75rem; margin-top: .5rem; }
